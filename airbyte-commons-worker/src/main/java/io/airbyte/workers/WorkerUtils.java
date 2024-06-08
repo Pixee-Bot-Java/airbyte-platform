@@ -24,6 +24,7 @@ import io.airbyte.workers.exception.WorkerException;
 import io.airbyte.workers.helper.FailureHelper;
 import io.airbyte.workers.helper.FailureHelper.ConnectorCommand;
 import io.airbyte.workers.internal.AirbyteStreamFactory;
+import io.github.pixee.security.BoundedLineReader;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -247,7 +248,7 @@ public class WorkerUtils {
     final BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream, StandardCharsets.UTF_8));
     final StringBuilder errorOutput = new StringBuilder();
     String line;
-    while ((line = reader.readLine()) != null) {
+    while ((line = BoundedLineReader.readLine(reader, 5_000_000)) != null) {
       errorOutput.append(line);
       errorOutput.append(System.lineSeparator());
     }
