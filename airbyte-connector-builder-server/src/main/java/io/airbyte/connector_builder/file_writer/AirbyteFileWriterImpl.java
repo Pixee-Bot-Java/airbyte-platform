@@ -11,6 +11,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +29,7 @@ public class AirbyteFileWriterImpl implements AirbyteFileWriter {
   @Override
   public String write(final String name, final String contents) throws IOException {
     final File tempDir = new File(System.getProperty("java.io.tmpdir"));
-    final File tempFile = File.createTempFile(name, ".tmp", tempDir);
+    final File tempFile = Files.createTempFile(tempDir.toPath(), name, ".tmp").toFile();
 
     try (final FileOutputStream fos = new FileOutputStream(tempFile, false);
         final OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
