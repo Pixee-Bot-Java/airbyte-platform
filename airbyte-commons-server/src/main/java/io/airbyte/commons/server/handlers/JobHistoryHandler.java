@@ -11,7 +11,6 @@ import static io.airbyte.persistence.job.models.Job.SYNC_REPLICATION_TYPES;
 import com.google.common.base.Preconditions;
 import datadog.trace.api.Trace;
 import io.airbyte.api.model.generated.AttemptInfoRead;
-import io.airbyte.api.model.generated.AttemptNormalizationStatusReadList;
 import io.airbyte.api.model.generated.ConnectionIdRequestBody;
 import io.airbyte.api.model.generated.ConnectionRead;
 import io.airbyte.api.model.generated.ConnectionSyncProgressRead;
@@ -100,9 +99,6 @@ public class JobHistoryHandler {
   private final AirbyteVersion airbyteVersion;
   private final TemporalClient temporalClient;
   private final FeatureFlagClient featureFlagClient;
-
-  private static final Set<JobConfigType> CONFIG_TYPE_SUPPORTING_PROGRESS =
-      Set.of(JobConfigType.SYNC, JobConfigType.REFRESH, JobConfigType.RESET_CONNECTION, JobConfigType.CLEAR);
 
   public JobHistoryHandler(final JobPersistence jobPersistence,
                            final WorkerEnvironment workerEnvironment,
@@ -377,7 +373,7 @@ public class JobHistoryHandler {
   }
 
   public ConnectionSyncProgressRead getConnectionSyncProgress(final ConnectionIdRequestBody connectionIdRequestBody) throws IOException {
-    final List<Job> jobs = jobPersistence.getRunningSyncJobForConnections(List.of(connectionIdRequestBody.getConnectionId()));
+    final List<Job> jobs = jobPersistence.getRunningJobForConnection(connectionIdRequestBody.getConnectionId());
 
     final List<JobWithAttemptsRead> jobReads = jobs.stream()
         .map(JobConverter::getJobWithAttemptsRead)
@@ -385,8 +381,7 @@ public class JobHistoryHandler {
 
     hydrateWithStats(jobReads, jobs, featureFlagClient.boolVariation(HydrateAggregatedStats.INSTANCE, new Workspace(ANONYMOUS)), jobPersistence);
 
-    if (jobReads.isEmpty() || jobReads.getFirst() == null
-        || !CONFIG_TYPE_SUPPORTING_PROGRESS.contains(jobReads.getFirst().getJob().getConfigType())) {
+    if (jobReads.isEmpty() || jobReads.getFirst() == null) {
       return new ConnectionSyncProgressRead().connectionId(connectionIdRequestBody.getConnectionId()).streams(Collections.emptyList());
     }
     final JobWithAttemptsRead runningJob = jobReads.getFirst();
@@ -409,7 +404,7 @@ public class JobHistoryHandler {
       streamToTrackPerConfigType.put(JobConfigType.REFRESH, streamsToRefresh);
       streamToTrackPerConfigType.put(JobConfigType.SYNC, enabledStreams.stream().filter(s -> !streamsToRefresh.contains(s)).toList());
     } else if (runningJobConfigType.equals(JobConfigType.RESET_CONNECTION) || runningJobConfigType.equals(JobConfigType.CLEAR)) {
-      streamToTrackPerConfigType.put(JobConfigType.CLEAR, runningJob.getJob().getResetConfig().getStreamsToReset());
+      streamToTrackPerConfigType.put(runningJobConfigType, runningJob.getJob().getResetConfig().getStreamsToReset());
     }
 
     final List<StreamSyncProgressReadItem> finalStreamsWithStats = streamToTrackPerConfigType.entrySet().stream()
@@ -438,7 +433,7 @@ public class JobHistoryHandler {
     return new ConnectionSyncProgressRead()
         .connectionId(connectionIdRequestBody.getConnectionId())
         .jobId(runningJob.getJob().getId())
-        .syncStartedAt(runningJob.getJob().getStartedAt())
+        .syncStartedAt(runningJob.getJob().getCreatedAt())
         .bytesEmitted(aggregatedStats == null ? null : aggregatedStats.getBytesEmitted())
         .bytesCommitted(aggregatedStats == null ? null : aggregatedStats.getBytesCommitted())
         .recordsEmitted(aggregatedStats == null ? null : aggregatedStats.getRecordsEmitted())
@@ -453,12 +448,6 @@ public class JobHistoryHandler {
 
   public List<JobStatusSummary> getLatestSyncJobsForConnections(final List<UUID> connectionIds) throws IOException {
     return jobPersistence.getLastSyncJobForConnections(connectionIds);
-  }
-
-  public AttemptNormalizationStatusReadList getAttemptNormalizationStatuses(final JobIdRequestBody jobIdRequestBody) throws IOException {
-    return new AttemptNormalizationStatusReadList()
-        .attemptNormalizationStatuses(jobPersistence.getAttemptNormalizationStatusesForJob(jobIdRequestBody.getId()).stream()
-            .map(JobConverter::convertAttemptNormalizationStatus).collect(Collectors.toList()));
   }
 
   public List<JobRead> getRunningSyncJobForConnections(final List<UUID> connectionIds) throws IOException {

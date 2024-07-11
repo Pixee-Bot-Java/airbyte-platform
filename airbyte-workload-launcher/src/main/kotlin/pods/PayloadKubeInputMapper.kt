@@ -121,7 +121,7 @@ class PayloadKubeInputMapper(
       )
 
     val nodeSelectors =
-      if (WorkloadPriority.DEFAULT.equals(input.launcherConfig.priority)) {
+      if (WorkloadPriority.DEFAULT == input.launcherConfig.priority) {
         getNodeSelectors(input.launcherConfig.isCustomConnector, replicationWorkerConfigs)
       } else {
         getNodeSelectors(input.launcherConfig.isCustomConnector, checkWorkerConfigs)
@@ -132,7 +132,7 @@ class PayloadKubeInputMapper(
     val extraEnv = resolveAwsAssumedRoleEnvVars(input.launcherConfig)
 
     return ConnectorKubeInput(
-      labeler.getCheckConnectorLabels() + sharedLabels,
+      labeler.getCheckLabels() + sharedLabels,
       nodeSelectors,
       connectorPodInfo,
       fileMap,
@@ -174,7 +174,7 @@ class PayloadKubeInputMapper(
     val extraEnv = resolveAwsAssumedRoleEnvVars(input.launcherConfig)
 
     return ConnectorKubeInput(
-      labeler.getCheckConnectorLabels() + sharedLabels,
+      labeler.getDiscoverLabels() + sharedLabels,
       nodeSelectors,
       connectorPodInfo,
       fileMap,
@@ -209,7 +209,7 @@ class PayloadKubeInputMapper(
     val fileMap = buildSpecFileMap(workloadId, input, input.jobRunConfig, logPath)
 
     return ConnectorKubeInput(
-      labeler.getCheckConnectorLabels() + sharedLabels,
+      labeler.getSpecLabels() + sharedLabels,
       nodeSelectors,
       connectorPodInfo,
       fileMap,

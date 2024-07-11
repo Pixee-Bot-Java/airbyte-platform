@@ -14,6 +14,10 @@ $border-radius: variables.$border-radius-lg;
   &--default {
     box-shadow: variables.$box-shadow;
   }
+
+  &--empty {
+    height: 100%;
+  }
 }
 
 .thead--sticky {
@@ -84,6 +88,12 @@ $border-radius: variables.$border-radius-lg;
 
   &:hover {
     background-color: colors.$grey-50;
+  }
+
+  &.emptyPlaceholder {
+    &:hover {
+      background-color: colors.$foreground;
+    }
   }
 }
 

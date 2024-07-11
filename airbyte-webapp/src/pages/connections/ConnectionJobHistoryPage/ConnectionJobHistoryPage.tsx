@@ -3,7 +3,7 @@ import React from "react";
 import { FormattedMessage } from "react-intl";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { EmptyResourceBlock } from "components/common/EmptyResourceBlock";
+import { EmptyState } from "components/common/EmptyState";
 import { ConnectionSyncButtons } from "components/connection/ConnectionSync/ConnectionSyncButtons";
 import { ConnectionSyncContextProvider } from "components/connection/ConnectionSync/ConnectionSyncContext";
 import { PageContainer } from "components/PageContainer";
@@ -53,7 +53,7 @@ export const ConnectionJobHistoryPage: React.FC = () => {
   const isSimplifiedCreation = useExperiment("connection.simplifiedCreation", true);
   const { connection } = useConnectionEditService();
   useTrackPage(PageTrackingCodes.CONNECTIONS_ITEM_STATUS);
-  const [filterValues, setFilterValue, setFilters] = useFilters<JobHistoryFilterValues>({
+  const [filterValues, setFilterValue, setFilters, isInitialState] = useFilters<JobHistoryFilterValues>({
     jobStatus: "all",
     startDate: "",
     endDate: "",
@@ -167,16 +167,25 @@ export const ConnectionJobHistoryPage: React.FC = () => {
           ) : jobs?.length ? (
             <JobsList jobs={jobs} />
           ) : linkedJobNotFound ? (
-            <EmptyResourceBlock
-              text={<FormattedMessage id="connection.linkedJobNotFound" />}
-              description={
-                <Link to={pathname}>
-                  <FormattedMessage id="connection.returnToJobHistory" />
-                </Link>
-              }
-            />
+            <Box pb="xl">
+              <EmptyState
+                text={<FormattedMessage id="connection.linkedJobNotFound" />}
+                description={
+                  <Link to={pathname}>
+                    <FormattedMessage id="connection.returnToJobHistory" />
+                  </Link>
+                }
+              />
+            </Box>
           ) : (
-            <EmptyResourceBlock text={<FormattedMessage id="sources.noSync" />} />
+            <Box pb="xl">
+              <EmptyState
+                text={<FormattedMessage id="jobs.noJobs" />}
+                description={
+                  <FormattedMessage id={isInitialState ? "jobs.noJobsDescription" : "jobs.noJobsFilterDescription"} />
+                }
+              />
+            </Box>
           )}
         </Card>
         {hasNextPage && (

@@ -113,7 +113,7 @@ export const useGetConnectionSyncProgress = (connectionId: string, enabled: bool
     async () => await getConnectionSyncProgress({ connectionId }, requestOptions),
     {
       enabled,
-      refetchInterval: (data) => (data?.jobId ? 60000 : 5000),
+      refetchInterval: 10000,
     }
   );
 };

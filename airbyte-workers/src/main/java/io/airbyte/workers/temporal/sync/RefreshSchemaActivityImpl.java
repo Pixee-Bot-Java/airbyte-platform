@@ -34,6 +34,7 @@ import io.airbyte.metrics.lib.MetricAttribute;
 import io.airbyte.metrics.lib.MetricClientFactory;
 import io.airbyte.metrics.lib.MetricTags;
 import io.airbyte.metrics.lib.OssMetricsRegistry;
+import io.airbyte.workers.helper.CatalogDiffConverter;
 import io.airbyte.workers.models.RefreshSchemaActivityInput;
 import io.airbyte.workers.models.RefreshSchemaActivityOutput;
 import jakarta.inject.Singleton;
@@ -103,7 +104,6 @@ public class RefreshSchemaActivityImpl implements RefreshSchemaActivity {
     return airbyteApiClient.getSourceApi().discoverSchemaForSource(requestBody);
   }
 
-  @Override
   @Trace(operationName = ACTIVITY_TRACE_OPERATION_NAME)
   public void refreshSchema(final UUID sourceId, final UUID connectionId) throws IOException {
     final var sourceDiscoverSchemaRead = discoverSchemaForRefresh(sourceId, connectionId);
@@ -152,8 +152,10 @@ public class RefreshSchemaActivityImpl implements RefreshSchemaActivity {
         connectionId,
         workspaceId);
 
-    final var output = new RefreshSchemaActivityOutput(
-        airbyteApiClient.getConnectionApi().applySchemaChangeForConnection(request).getPropagatedDiff());
+    final var propagatedDiff = airbyteApiClient.getConnectionApi().applySchemaChangeForConnection(request).getPropagatedDiff();
+    final var domainDiff = propagatedDiff != null ? CatalogDiffConverter.toDomain(propagatedDiff) : null;
+
+    final var output = new RefreshSchemaActivityOutput(domainDiff);
 
     final var attrs = new MetricAttribute[] {
       new MetricAttribute(MetricTags.CONNECTION_ID, String.valueOf(connectionId))

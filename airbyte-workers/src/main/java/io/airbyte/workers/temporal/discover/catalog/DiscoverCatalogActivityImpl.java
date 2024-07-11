@@ -14,11 +14,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.annotations.VisibleForTesting;
 import datadog.trace.api.Trace;
 import io.airbyte.api.client.AirbyteApiClient;
+import io.airbyte.api.client.model.generated.ConnectionAutoPropagateSchemaChange;
 import io.airbyte.api.client.model.generated.ConnectionIdRequestBody;
+import io.airbyte.api.client.model.generated.DiffCatalogRequestBody;
 import io.airbyte.api.client.model.generated.Geography;
 import io.airbyte.api.client.model.generated.ScopeType;
 import io.airbyte.api.client.model.generated.SecretPersistenceConfig;
 import io.airbyte.api.client.model.generated.SecretPersistenceConfigGetRequestBody;
+import io.airbyte.api.client.model.generated.SourceDiscoverSchemaRead;
 import io.airbyte.api.client.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.commons.converters.ConnectorConfigUpdater;
 import io.airbyte.commons.features.FeatureFlags;
@@ -41,11 +44,14 @@ import io.airbyte.config.helpers.LogConfigs;
 import io.airbyte.config.helpers.ResourceRequirementsUtils;
 import io.airbyte.config.secrets.SecretsRepositoryReader;
 import io.airbyte.config.secrets.persistence.RuntimeSecretPersistence;
+import io.airbyte.featureflag.Empty;
 import io.airbyte.featureflag.FeatureFlagClient;
 import io.airbyte.featureflag.Organization;
 import io.airbyte.featureflag.UseRuntimeSecretPersistence;
 import io.airbyte.featureflag.UseWorkloadApi;
+import io.airbyte.featureflag.WorkloadApiServerEnabled;
 import io.airbyte.featureflag.WorkloadCheckFrequencyInSeconds;
+import io.airbyte.featureflag.WorkloadLauncherEnabled;
 import io.airbyte.featureflag.Workspace;
 import io.airbyte.metrics.lib.ApmTraceUtils;
 import io.airbyte.metrics.lib.MetricAttribute;
@@ -57,11 +63,14 @@ import io.airbyte.persistence.job.models.JobRunConfig;
 import io.airbyte.workers.Worker;
 import io.airbyte.workers.exception.WorkerException;
 import io.airbyte.workers.general.DefaultDiscoverCatalogWorker;
+import io.airbyte.workers.helper.CatalogDiffConverter;
 import io.airbyte.workers.helper.GsonPksExtractor;
 import io.airbyte.workers.helper.SecretPersistenceConfigHelper;
 import io.airbyte.workers.internal.AirbyteStreamFactory;
 import io.airbyte.workers.internal.VersionedAirbyteStreamFactory;
 import io.airbyte.workers.models.DiscoverCatalogInput;
+import io.airbyte.workers.models.PostprocessCatalogInput;
+import io.airbyte.workers.models.PostprocessCatalogOutput;
 import io.airbyte.workers.process.AirbyteIntegrationLauncher;
 import io.airbyte.workers.process.IntegrationLauncher;
 import io.airbyte.workers.process.Metadata;
@@ -83,6 +92,7 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -244,7 +254,11 @@ public class DiscoverCatalogActivityImpl implements DiscoverCatalogActivity {
 
   @Override
   public boolean shouldUseWorkload(final UUID workspaceId) {
-    return featureFlagClient.boolVariation(UseWorkloadApi.INSTANCE, new Workspace(workspaceId));
+    var ffCheck = featureFlagClient.boolVariation(UseWorkloadApi.INSTANCE, new Workspace(workspaceId));
+    var envCheck = featureFlagClient.boolVariation(WorkloadLauncherEnabled.INSTANCE, Empty.INSTANCE)
+        && featureFlagClient.boolVariation(WorkloadApiServerEnabled.INSTANCE, Empty.INSTANCE);
+
+    return ffCheck || envCheck;
   }
 
   @Override
@@ -261,6 +275,35 @@ public class DiscoverCatalogActivityImpl implements DiscoverCatalogActivity {
     metricClient.count(OssMetricsRegistry.CATALOG_DISCOVERY, 1,
         new MetricAttribute(MetricTags.STATUS, "failed"),
         new MetricAttribute("workload_enabled", workloadEnabledStr));
+  }
+
+  @Override
+  public PostprocessCatalogOutput postprocess(final PostprocessCatalogInput input) {
+    try {
+      Objects.requireNonNull(input.getConnectionId());
+      Objects.requireNonNull(input.getCatalogId());
+      Objects.requireNonNull(input.getWorkspaceId());
+
+      final var reqBody = new DiffCatalogRequestBody(
+          input.getCatalogId(),
+          input.getConnectionId());
+
+      final SourceDiscoverSchemaRead resp = airbyteApiClient.getConnectionApi().diffCatalogForConnection(reqBody);
+      Objects.requireNonNull(resp.getCatalog());
+
+      final var request = new ConnectionAutoPropagateSchemaChange(
+          resp.getCatalog(),
+          input.getCatalogId(),
+          input.getConnectionId(),
+          input.getWorkspaceId());
+
+      final var propagatedDiff = airbyteApiClient.getConnectionApi().applySchemaChangeForConnection(request).getPropagatedDiff();
+      final var domainDiff = propagatedDiff != null ? CatalogDiffConverter.toDomain(propagatedDiff) : null;
+
+      return PostprocessCatalogOutput.Companion.success(domainDiff);
+    } catch (final Exception e) {
+      return PostprocessCatalogOutput.Companion.failure(e);
+    }
   }
 
   @VisibleForTesting

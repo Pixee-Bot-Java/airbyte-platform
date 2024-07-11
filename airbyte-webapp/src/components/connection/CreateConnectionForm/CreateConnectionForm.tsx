@@ -7,7 +7,6 @@ import LoadingSchema from "components/LoadingSchema";
 import { FlexContainer } from "components/ui/Flex";
 
 import { useGetDestinationFromSearchParams, useGetSourceFromSearchParams } from "area/connector/utils";
-import { useCurrentWorkspaceId } from "area/workspace/utils";
 import { useCreateConnection, useDiscoverSchema } from "core/api";
 import { ConnectionScheduleType } from "core/api/types/AirbyteClient";
 import { FeatureItem, useFeature } from "core/services/features";
@@ -28,17 +27,14 @@ import { useAnalyticsTrackFunctions } from "./useAnalyticsTrackFunctions";
 import { ConnectionConfigurationCard } from "../ConnectionForm/ConnectionConfigurationCard";
 import { CreateConnectionFormControls } from "../ConnectionForm/CreateConnectionFormControls";
 import { FormConnectionFormValues, useConnectionValidationSchema } from "../ConnectionForm/formConfig";
-import { OperationsSectionCard } from "../ConnectionForm/OperationsSectionCard";
 import { SyncCatalogCard } from "../ConnectionForm/SyncCatalogCard";
 import { SyncCatalogCardNext } from "../ConnectionForm/SyncCatalogCardNext";
-import { mapFormValuesToOperations } from "../ConnectionForm/utils";
 
 export const CREATE_CONNECTION_FORM_ID = "create-connection-form";
 
 const CreateConnectionFormInner: React.FC = () => {
   const isSyncCatalogV2Enabled = useExperiment("connection.syncCatalogV2", false);
   const navigate = useNavigate();
-  const workspaceId = useCurrentWorkspaceId();
   const { clearAllFormChanges } = useFormChangeTrackerService();
   const { mutateAsync: createConnection } = useCreateConnection();
   const { connection, initialValues, setSubmitError } = useConnectionFormService();
@@ -52,16 +48,11 @@ const CreateConnectionFormInner: React.FC = () => {
   const isSimplifiedCreation = useExperiment("connection.simplifiedCreation", true);
 
   const onSubmit = useCallback(
-    async ({ normalization, transformations, ...restFormValues }: FormConnectionFormValues) => {
+    async ({ ...restFormValues }: FormConnectionFormValues) => {
       try {
         const createdConnection = await createConnection({
           values: {
             ...restFormValues,
-            // don't add operations if normalization and transformations are undefined
-            ...((normalization !== undefined || transformations !== undefined) && {
-              // combine the normalization and transformations into operations[]
-              operations: mapFormValuesToOperations(workspaceId, normalization, transformations),
-            }),
           },
           source: connection.source,
           destination: connection.destination,
@@ -97,7 +88,6 @@ const CreateConnectionFormInner: React.FC = () => {
       createConnection,
       navigate,
       setSubmitError,
-      workspaceId,
       isSimplifiedCreation,
       registerNotification,
       formatMessage,
@@ -122,7 +112,6 @@ const CreateConnectionFormInner: React.FC = () => {
               {canEditDataGeographies && <DataResidencyCard />}
               <ConnectionConfigurationCard />
               {isSyncCatalogV2Enabled ? <SyncCatalogCardNext /> : <SyncCatalogCard />}
-              <OperationsSectionCard />
               <CreateConnectionFormControls />
             </>
           )}

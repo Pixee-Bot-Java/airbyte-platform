@@ -18,8 +18,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import io.airbyte.api.model.generated.ActorDefinitionIdWithScope;
 import io.airbyte.api.model.generated.CustomDestinationDefinitionCreate;
 import io.airbyte.api.model.generated.DestinationDefinitionCreate;
@@ -36,6 +34,7 @@ import io.airbyte.api.model.generated.ReleaseStage;
 import io.airbyte.api.model.generated.SupportLevel;
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.commons.json.Jsons;
+import io.airbyte.commons.server.converters.ApiPojoConverters;
 import io.airbyte.commons.server.errors.IdNotFoundKnownException;
 import io.airbyte.commons.server.errors.UnsupportedProtocolVersionException;
 import io.airbyte.commons.server.handlers.helpers.ActorDefinitionHandlerHelper;
@@ -46,7 +45,7 @@ import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ActorType;
 import io.airbyte.config.AllowedHosts;
 import io.airbyte.config.ConnectorRegistryDestinationDefinition;
-import io.airbyte.config.NormalizationDestinationDefinitionConfig;
+import io.airbyte.config.ConnectorRegistryEntryMetrics;
 import io.airbyte.config.ResourceRequirements;
 import io.airbyte.config.ScopeType;
 import io.airbyte.config.StandardDestinationDefinition;
@@ -70,10 +69,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.jooq.JSONB;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -88,10 +89,12 @@ class DestinationDefinitionsHandlerTest {
   private static final String ICON_URL = "https://connectors.airbyte.com/files/metadata/airbyte/destination-presto/latest/icon.svg";
 
   private ConfigRepository configRepository;
+
   private StandardDestinationDefinition destinationDefinition;
-  private StandardDestinationDefinition destinationDefinitionWithNormalization;
+  private StandardDestinationDefinition destinationDefinitionWithOptionals;
+
   private ActorDefinitionVersion destinationDefinitionVersion;
-  private ActorDefinitionVersion destinationDefinitionVersionWithNormalization;
+  private ActorDefinitionVersion destinationDefinitionVersionWithOptionals;
 
   private DestinationDefinitionsHandler destinationDefinitionsHandler;
   private Supplier<UUID> uuidSupplier;
@@ -110,9 +113,9 @@ class DestinationDefinitionsHandlerTest {
     configRepository = mock(ConfigRepository.class);
     uuidSupplier = mock(Supplier.class);
     destinationDefinition = generateDestinationDefinition();
-    destinationDefinitionWithNormalization = generateDestinationDefinition();
+    destinationDefinitionWithOptionals = generateDestinationDefinitionWithOptionals();
     destinationDefinitionVersion = generateVersionFromDestinationDefinition(destinationDefinition);
-    destinationDefinitionVersionWithNormalization = generateDestinationDefinitionVersionWithNormalization(destinationDefinitionWithNormalization);
+    destinationDefinitionVersionWithOptionals = generateDestinationDefinitionVersionWithOptionals(destinationDefinitionWithOptionals);
     actorDefinitionHandlerHelper = mock(ActorDefinitionHandlerHelper.class);
     remoteDefinitionsProvider = mock(RemoteDefinitionsProvider.class);
     destinationHandler = mock(DestinationHandler.class);
@@ -145,7 +148,7 @@ class DestinationDefinitionsHandlerTest {
 
   private ActorDefinitionVersion generateVersionFromDestinationDefinition(final StandardDestinationDefinition destinationDefinition) {
     final ConnectorSpecification spec = new ConnectorSpecification()
-        .withConnectionSpecification(Jsons.jsonNode(ImmutableMap.of("foo", "bar")));
+        .withConnectionSpecification(Jsons.jsonNode(Map.of("foo", "bar")));
 
     return new ActorDefinitionVersion()
         .withActorDefinitionId(destinationDefinition.getDestinationDefinitionId())
@@ -180,24 +183,28 @@ class DestinationDefinitionsHandlerTest {
         .withAllowedHosts(null);
   }
 
-  private ActorDefinitionVersion generateDestinationDefinitionVersionWithNormalization(final StandardDestinationDefinition destinationDefinition) {
+  private StandardDestinationDefinition generateDestinationDefinitionWithOptionals() {
+    final ConnectorRegistryEntryMetrics metrics =
+        new ConnectorRegistryEntryMetrics().withAdditionalProperty("all", JSONB.valueOf("{'all': {'usage': 'high'}}"));
+    return generateDestinationDefinition().withMetrics(metrics);
+  }
+
+  private ActorDefinitionVersion generateDestinationDefinitionVersionWithOptionals(final StandardDestinationDefinition destinationDefinition) {
     return generateVersionFromDestinationDefinition(destinationDefinition)
-        .withSupportsDbt(true)
-        .withNormalizationConfig(new NormalizationDestinationDefinitionConfig()
-            .withNormalizationRepository("repository")
-            .withNormalizationTag("dev")
-            .withNormalizationIntegrationType("integration-type"));
+        .withCdkVersion("python:1.2.3")
+        .withLastPublished(new Date());
   }
 
   @Test
   @DisplayName("listDestinationDefinition should return the right list")
   void testListDestinations() throws IOException, URISyntaxException {
-
     when(configRepository.listStandardDestinationDefinitions(false))
-        .thenReturn(Lists.newArrayList(destinationDefinition, destinationDefinitionWithNormalization));
+        .thenReturn(List.of(destinationDefinition, destinationDefinitionWithOptionals));
     when(configRepository.getActorDefinitionVersions(
-        List.of(destinationDefinition.getDefaultVersionId(), destinationDefinitionWithNormalization.getDefaultVersionId())))
-            .thenReturn(Lists.newArrayList(destinationDefinitionVersion, destinationDefinitionVersionWithNormalization));
+        List.of(destinationDefinition.getDefaultVersionId(),
+            destinationDefinitionWithOptionals.getDefaultVersionId())))
+                .thenReturn(List.of(destinationDefinitionVersion,
+                    destinationDefinitionVersionWithOptionals));
 
     final DestinationDefinitionRead expectedDestinationDefinitionRead1 = new DestinationDefinitionRead()
         .destinationDefinitionId(destinationDefinition.getDestinationDefinitionId())
@@ -210,38 +217,34 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
             .jobSpecific(Collections.emptyList()));
 
-    final DestinationDefinitionRead expectedDestinationDefinitionRead2 = new DestinationDefinitionRead()
-        .destinationDefinitionId(destinationDefinitionWithNormalization.getDestinationDefinitionId())
-        .name(destinationDefinitionWithNormalization.getName())
-        .dockerRepository(destinationDefinitionVersionWithNormalization.getDockerRepository())
-        .dockerImageTag(destinationDefinitionVersionWithNormalization.getDockerImageTag())
-        .documentationUrl(new URI(destinationDefinitionVersionWithNormalization.getDocumentationUrl()))
-        .icon(DestinationDefinitionsHandler.loadIcon(destinationDefinitionWithNormalization.getIcon()))
-        .protocolVersion(destinationDefinitionVersionWithNormalization.getProtocolVersion())
-        .supportLevel(SupportLevel.fromValue(destinationDefinitionVersionWithNormalization.getSupportLevel().value()))
-        .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersionWithNormalization.getReleaseStage().value()))
-        .releaseDate(LocalDate.parse(destinationDefinitionVersionWithNormalization.getReleaseDate()))
-        .supportsDbt(destinationDefinitionVersionWithNormalization.getSupportsDbt())
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(true)
-            .normalizationRepository(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationRepository())
-            .normalizationTag(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationTag())
-            .normalizationIntegrationType(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationIntegrationType()))
+    final DestinationDefinitionRead expectedDestinationDefinitionReadWithOpts = new DestinationDefinitionRead()
+        .destinationDefinitionId(destinationDefinitionWithOptionals.getDestinationDefinitionId())
+        .name(destinationDefinitionWithOptionals.getName())
+        .dockerRepository(destinationDefinitionVersionWithOptionals.getDockerRepository())
+        .dockerImageTag(destinationDefinitionVersionWithOptionals.getDockerImageTag())
+        .documentationUrl(new URI(destinationDefinitionVersionWithOptionals.getDocumentationUrl()))
+        .icon(DestinationDefinitionsHandler.loadIcon(destinationDefinitionWithOptionals.getIcon()))
+        .protocolVersion(destinationDefinitionVersionWithOptionals.getProtocolVersion())
+        .supportLevel(SupportLevel.fromValue(destinationDefinitionVersionWithOptionals.getSupportLevel().value()))
+        .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersionWithOptionals.getReleaseStage().value()))
+        .releaseDate(LocalDate.parse(destinationDefinitionVersionWithOptionals.getReleaseDate()))
+        .cdkVersion(destinationDefinitionVersionWithOptionals.getCdkVersion())
+        .lastPublished(ApiPojoConverters.toOffsetDateTime(destinationDefinitionVersionWithOptionals.getLastPublished()))
+        .metrics(destinationDefinitionWithOptionals.getMetrics())
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
-                .cpuRequest(destinationDefinitionWithNormalization.getResourceRequirements().getDefault().getCpuRequest()))
+                .cpuRequest(destinationDefinitionWithOptionals.getResourceRequirements().getDefault().getCpuRequest()))
             .jobSpecific(Collections.emptyList()));
 
     final DestinationDefinitionReadList actualDestinationDefinitionReadList = destinationDefinitionsHandler.listDestinationDefinitions();
 
     assertEquals(
-        Lists.newArrayList(expectedDestinationDefinitionRead1, expectedDestinationDefinitionRead2),
+        List.of(expectedDestinationDefinitionRead1, expectedDestinationDefinitionReadWithOpts),
         actualDestinationDefinitionReadList.getDestinationDefinitions());
   }
 
@@ -249,12 +252,8 @@ class DestinationDefinitionsHandlerTest {
   @DisplayName("listDestinationDefinitionsForWorkspace should return the right list")
   void testListDestinationDefinitionsForWorkspace() throws IOException, URISyntaxException, JsonValidationException, ConfigNotFoundException {
     when(featureFlagClient.boolVariation(eq(HideActorDefinitionFromList.INSTANCE), any())).thenReturn(false);
-    when(configRepository.listPublicDestinationDefinitions(false)).thenReturn(Lists.newArrayList(destinationDefinition));
-    when(configRepository.listGrantedDestinationDefinitions(workspaceId, false))
-        .thenReturn(Lists.newArrayList(destinationDefinitionWithNormalization));
+    when(configRepository.listPublicDestinationDefinitions(false)).thenReturn(List.of(destinationDefinition));
     when(actorDefinitionVersionHelper.getDestinationVersion(destinationDefinition, workspaceId)).thenReturn(destinationDefinitionVersion);
-    when(actorDefinitionVersionHelper.getDestinationVersion(destinationDefinitionWithNormalization, workspaceId))
-        .thenReturn(destinationDefinitionVersionWithNormalization);
 
     final DestinationDefinitionRead expectedDestinationDefinitionRead1 = new DestinationDefinitionRead()
         .destinationDefinitionId(destinationDefinition.getDestinationDefinitionId())
@@ -267,39 +266,16 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
-            .jobSpecific(Collections.emptyList()));
-
-    final DestinationDefinitionRead expectedDestinationDefinitionRead2 = new DestinationDefinitionRead()
-        .destinationDefinitionId(destinationDefinitionWithNormalization.getDestinationDefinitionId())
-        .name(destinationDefinitionWithNormalization.getName())
-        .dockerRepository(destinationDefinitionVersionWithNormalization.getDockerRepository())
-        .dockerImageTag(destinationDefinitionVersionWithNormalization.getDockerImageTag())
-        .documentationUrl(new URI(destinationDefinitionVersionWithNormalization.getDocumentationUrl()))
-        .icon(DestinationDefinitionsHandler.loadIcon(destinationDefinitionWithNormalization.getIcon()))
-        .protocolVersion(destinationDefinitionVersionWithNormalization.getProtocolVersion())
-        .supportLevel(SupportLevel.fromValue(destinationDefinitionVersionWithNormalization.getSupportLevel().value()))
-        .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersionWithNormalization.getReleaseStage().value()))
-        .releaseDate(LocalDate.parse(destinationDefinitionVersionWithNormalization.getReleaseDate()))
-        .supportsDbt(destinationDefinitionVersionWithNormalization.getSupportsDbt())
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(true)
-            .normalizationRepository(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationRepository())
-            .normalizationTag(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationTag())
-            .normalizationIntegrationType(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationIntegrationType()))
-        .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
-            ._default(new io.airbyte.api.model.generated.ResourceRequirements()
-                .cpuRequest(destinationDefinitionWithNormalization.getResourceRequirements().getDefault().getCpuRequest()))
             .jobSpecific(Collections.emptyList()));
 
     final DestinationDefinitionReadList actualDestinationDefinitionReadList = destinationDefinitionsHandler
         .listDestinationDefinitionsForWorkspace(new WorkspaceIdRequestBody().workspaceId(workspaceId));
 
     assertEquals(
-        Lists.newArrayList(expectedDestinationDefinitionRead1, expectedDestinationDefinitionRead2),
+        List.of(expectedDestinationDefinitionRead1),
         actualDestinationDefinitionReadList.getDestinationDefinitions());
   }
 
@@ -313,18 +289,14 @@ class DestinationDefinitionsHandlerTest {
         new Multi(List.of(new DestinationDefinition(hiddenDestinationDefinition.getDestinationDefinitionId()), new Workspace(workspaceId)))))
             .thenReturn(true);
 
-    when(configRepository.listPublicDestinationDefinitions(false)).thenReturn(Lists.newArrayList(destinationDefinition, hiddenDestinationDefinition));
-    when(configRepository.listGrantedDestinationDefinitions(workspaceId, false))
-        .thenReturn(Lists.newArrayList(destinationDefinitionWithNormalization));
+    when(configRepository.listPublicDestinationDefinitions(false)).thenReturn(List.of(destinationDefinition, hiddenDestinationDefinition));
     when(actorDefinitionVersionHelper.getDestinationVersion(destinationDefinition, workspaceId)).thenReturn(destinationDefinitionVersion);
-    when(actorDefinitionVersionHelper.getDestinationVersion(destinationDefinitionWithNormalization, workspaceId))
-        .thenReturn(destinationDefinitionVersionWithNormalization);
 
     final DestinationDefinitionReadList actualDestinationDefinitionReadList = destinationDefinitionsHandler
         .listDestinationDefinitionsForWorkspace(new WorkspaceIdRequestBody().workspaceId(workspaceId));
 
     final List<UUID> expectedIds =
-        Lists.newArrayList(destinationDefinition.getDestinationDefinitionId(), destinationDefinitionWithNormalization.getDestinationDefinitionId());
+        List.of(destinationDefinition.getDestinationDefinitionId());
 
     assertEquals(expectedIds.size(), actualDestinationDefinitionReadList.getDestinationDefinitions().size());
     assertTrue(expectedIds.containsAll(actualDestinationDefinitionReadList.getDestinationDefinitions().stream()
@@ -336,12 +308,10 @@ class DestinationDefinitionsHandlerTest {
   void testListPrivateDestinationDefinitions() throws IOException, URISyntaxException {
 
     when(configRepository.listGrantableDestinationDefinitions(workspaceId, false)).thenReturn(
-        Lists.newArrayList(
-            Map.entry(destinationDefinition, false),
-            Map.entry(destinationDefinitionWithNormalization, true)));
+        List.of(Map.entry(destinationDefinition, false)));
     when(configRepository.getActorDefinitionVersions(
-        List.of(destinationDefinition.getDefaultVersionId(), destinationDefinitionWithNormalization.getDefaultVersionId())))
-            .thenReturn(Lists.newArrayList(destinationDefinitionVersion, destinationDefinitionVersionWithNormalization));
+        List.of(destinationDefinition.getDefaultVersionId())))
+            .thenReturn(List.of(destinationDefinitionVersion));
 
     final DestinationDefinitionRead expectedDestinationDefinitionRead1 = new DestinationDefinitionRead()
         .destinationDefinitionId(destinationDefinition.getDestinationDefinitionId())
@@ -354,46 +324,20 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
             .jobSpecific(Collections.emptyList()));
 
-    final DestinationDefinitionRead expectedDestinationDefinitionRead2 = new DestinationDefinitionRead()
-        .destinationDefinitionId(destinationDefinitionWithNormalization.getDestinationDefinitionId())
-        .name(destinationDefinitionWithNormalization.getName())
-        .dockerRepository(destinationDefinitionVersionWithNormalization.getDockerRepository())
-        .dockerImageTag(destinationDefinitionVersionWithNormalization.getDockerImageTag())
-        .documentationUrl(new URI(destinationDefinitionVersionWithNormalization.getDocumentationUrl()))
-        .icon(DestinationDefinitionsHandler.loadIcon(destinationDefinitionWithNormalization.getIcon()))
-        .protocolVersion(destinationDefinitionVersionWithNormalization.getProtocolVersion())
-        .supportLevel(SupportLevel.fromValue(destinationDefinitionVersionWithNormalization.getSupportLevel().value()))
-        .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersionWithNormalization.getReleaseStage().value()))
-        .releaseDate(LocalDate.parse(destinationDefinitionVersionWithNormalization.getReleaseDate()))
-        .supportsDbt(destinationDefinitionVersionWithNormalization.getSupportsDbt())
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(true)
-            .normalizationRepository(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationRepository())
-            .normalizationTag(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationTag())
-            .normalizationIntegrationType(destinationDefinitionVersionWithNormalization.getNormalizationConfig().getNormalizationIntegrationType()))
-        .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
-            ._default(new io.airbyte.api.model.generated.ResourceRequirements()
-                .cpuRequest(destinationDefinitionWithNormalization.getResourceRequirements().getDefault().getCpuRequest()))
-            .jobSpecific(Collections.emptyList()));
-
     final PrivateDestinationDefinitionRead expectedDestinationDefinitionOptInRead1 =
         new PrivateDestinationDefinitionRead().destinationDefinition(expectedDestinationDefinitionRead1).granted(false);
-
-    final PrivateDestinationDefinitionRead expectedDestinationDefinitionOptInRead2 =
-        new PrivateDestinationDefinitionRead().destinationDefinition(expectedDestinationDefinitionRead2).granted(true);
 
     final PrivateDestinationDefinitionReadList actualDestinationDefinitionOptInReadList =
         destinationDefinitionsHandler.listPrivateDestinationDefinitions(
             new WorkspaceIdRequestBody().workspaceId(workspaceId));
 
     assertEquals(
-        Lists.newArrayList(expectedDestinationDefinitionOptInRead1, expectedDestinationDefinitionOptInRead2),
+        List.of(expectedDestinationDefinitionOptInRead1),
         actualDestinationDefinitionOptInReadList.getDestinationDefinitions());
   }
 
@@ -416,8 +360,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -487,8 +429,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -527,8 +467,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -592,8 +530,6 @@ class DestinationDefinitionsHandlerTest {
         .custom(true)
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.CUSTOM)
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(newDestinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -658,8 +594,6 @@ class DestinationDefinitionsHandlerTest {
         .custom(true)
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.CUSTOM)
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(newDestinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -786,8 +720,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -872,8 +804,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -910,8 +840,6 @@ class DestinationDefinitionsHandlerTest {
         .supportLevel(SupportLevel.fromValue(destinationDefinitionVersion.getSupportLevel().value()))
         .releaseStage(ReleaseStage.fromValue(destinationDefinitionVersion.getReleaseStage().value()))
         .releaseDate(LocalDate.parse(destinationDefinitionVersion.getReleaseDate()))
-        .supportsDbt(false)
-        .normalizationConfig(new io.airbyte.api.model.generated.NormalizationDestinationDefinitionConfig().supported(false))
         .resourceRequirements(new io.airbyte.api.model.generated.ActorDefinitionResourceRequirements()
             ._default(new io.airbyte.api.model.generated.ResourceRequirements()
                 .cpuRequest(destinationDefinition.getResourceRequirements().getDefault().getCpuRequest()))
@@ -962,7 +890,7 @@ class DestinationDefinitionsHandlerTest {
           .withDockerImageTag("1.2.4")
           .withIcon("dest.svg")
           .withSpec(new ConnectorSpecification().withConnectionSpecification(
-              Jsons.jsonNode(ImmutableMap.of("key", "val"))))
+              Jsons.jsonNode(Map.of("key", "val"))))
           .withTombstone(false)
           .withProtocolVersion("0.2.2")
           .withSupportLevel(io.airbyte.config.SupportLevel.COMMUNITY)

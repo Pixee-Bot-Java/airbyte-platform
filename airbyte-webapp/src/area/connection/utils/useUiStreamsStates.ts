@@ -11,9 +11,9 @@ import { useEffect, useState } from "react";
 import { useConnectionStatus } from "components/connection/ConnectionStatus/useConnectionStatus";
 import { ConnectionStatusIndicatorStatus } from "components/connection/ConnectionStatusIndicator";
 
-import { connectionsKeys } from "core/api";
+import { connectionsKeys, useGetConnectionSyncProgress } from "core/api";
 import { JobConfigType, StreamStatusJobType, StreamStatusRunState } from "core/api/types/AirbyteClient";
-import { useExperiment } from "hooks/services/Experiment";
+import { useStreamsListContext } from "pages/connections/StreamStatusPage/StreamsListContext";
 
 import { getStreamKey } from "./computeStreamStatus";
 import { useHistoricalStreamData } from "./useStreamsHistoricalData";
@@ -24,8 +24,8 @@ interface UIStreamState {
   streamName: string;
   streamNamespace?: string;
   activeJobConfigType?: JobConfigType;
-  activeJobStartedAt?: number; // date?
-  dataFreshAsOf?: number; // date?
+  activeJobStartedAt?: number;
+  dataFreshAsOf?: number;
   recordsExtracted?: number;
   recordsLoaded?: number;
   bytesLoaded?: number;
@@ -35,24 +35,21 @@ interface UIStreamState {
 
 export const useUiStreamStates = (connectionId: string): UIStreamState[] => {
   const connectionStatus = useConnectionStatus(connectionId);
+  const { filteredStreamsByName } = useStreamsListContext();
   const [wasRunning, setWasRunning] = useState<boolean>(connectionStatus.isRunning);
   const [isFetchingPostJob, setIsFetchingPostJob] = useState<boolean>(false);
-  const isSyncProgressEnabled = useExperiment("connection.syncProgress", false);
+  const { data: connectionSyncProgress } = useGetConnectionSyncProgress(connectionId, connectionStatus.isRunning);
+  const currentJobId = connectionSyncProgress?.jobId;
 
   const queryClient = useQueryClient();
 
-  const { streamStatuses, enabledStreams } = useStreamsStatuses(connectionId);
-  const syncProgress = useStreamsSyncProgress(connectionId, connectionStatus.isRunning, isSyncProgressEnabled);
+  const { streamStatuses } = useStreamsStatuses(connectionId);
+  const syncProgress = useStreamsSyncProgress(connectionId, connectionStatus.isRunning);
   const isClearOrResetJob = (configType?: JobConfigType) =>
     configType === JobConfigType.clear || configType === JobConfigType.reset_connection;
 
-  const streamsToList = enabledStreams
-    .map((stream) => {
-      return { streamName: stream.stream?.name ?? "", streamNamespace: stream.stream?.namespace };
-    })
-    .sort((a, b) => a.streamName.localeCompare(b.streamName));
-
   const { historicalStreamsData, isFetching: isLoadingHistoricalData } = useHistoricalStreamData(connectionId);
+
   // if we just finished a job, re-fetch the historical data and set wasRunning to false
   useEffect(() => {
     if (wasRunning && !connectionStatus.isRunning) {
@@ -72,7 +69,7 @@ export const useUiStreamStates = (connectionId: string): UIStreamState[] => {
     }
   }, [wasRunning, connectionStatus.isRunning, queryClient, connectionId, isFetchingPostJob, isLoadingHistoricalData]);
 
-  const uiStreamStates = streamsToList.map((streamItem) => {
+  const uiStreamStates = filteredStreamsByName.map((streamItem) => {
     // initialize the state as undefined
     const uiState: UIStreamState = {
       streamName: streamItem.streamName,
@@ -102,7 +99,10 @@ export const useUiStreamStates = (connectionId: string): UIStreamState[] => {
       // also, for clear jobs, we should not show anything in this column
       uiState.recordsExtracted = syncProgressItem.recordsEmitted;
       uiState.recordsLoaded = syncProgressItem.recordsCommitted;
-      uiState.activeJobStartedAt = streamStatus?.relevantHistory[0]?.transitionedAt;
+      uiState.activeJobStartedAt =
+        currentJobId === streamStatus?.relevantHistory[0]?.jobId
+          ? streamStatus?.relevantHistory[0]?.transitionedAt
+          : undefined;
     } else if (historicalItem && !isClearOrResetJob(historicalItem.configType)) {
       uiState.recordsLoaded = historicalItem.recordsCommitted;
       uiState.bytesLoaded = historicalItem.bytesCommitted;

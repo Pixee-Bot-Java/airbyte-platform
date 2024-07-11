@@ -16,7 +16,6 @@ import {
 } from "core/api/types/AirbyteClient";
 import { moveTimeToFutureByPeriod } from "core/utils/time";
 import { useSchemaChanges } from "hooks/connection/useSchemaChanges";
-import { useExperiment } from "hooks/services/Experiment";
 
 import { ConnectionStatusIndicatorStatus } from "../ConnectionStatusIndicator";
 
@@ -69,7 +68,6 @@ export interface UIConnectionStatus {
 
 export const useConnectionStatus = (connectionId: string): UIConnectionStatus => {
   const connection = useGetConnection(connectionId);
-  const showSyncProgress = useExperiment("connection.syncProgress", false);
 
   const connectionStatuses = useListConnectionsStatuses([connectionId]);
   const connectionStatus = connectionStatuses[0];
@@ -84,7 +82,7 @@ export const useConnectionStatus = (connectionId: string): UIConnectionStatus =>
     lastSyncAttemptNumber,
   } = connectionStatus;
 
-  const { data: syncProgress } = useGetConnectionSyncProgress(connectionId, showSyncProgress && isRunning);
+  const { data: syncProgress } = useGetConnectionSyncProgress(connectionId, isRunning);
 
   const hasConfigError = failureReason?.failureType === FailureType.config_error;
 
@@ -107,13 +105,9 @@ export const useConnectionStatus = (connectionId: string): UIConnectionStatus =>
     ).valueOf();
   }
 
-  if (isRunning && showSyncProgress) {
-    const hasRecordsExtracted = syncProgress?.streams.some(
-      (progress) => progress?.recordsEmitted && progress.recordsEmitted > 0
-    );
-
+  if (isRunning) {
     return {
-      status: hasRecordsExtracted ? ConnectionStatusIndicatorStatus.Syncing : ConnectionStatusIndicatorStatus.Queued,
+      status: ConnectionStatusIndicatorStatus.Syncing,
       lastSyncJobStatus,
       nextSync,
       lastSuccessfulSync,
@@ -121,8 +115,8 @@ export const useConnectionStatus = (connectionId: string): UIConnectionStatus =>
       failureReason,
       lastSyncJobId,
       lastSyncAttemptNumber,
-      recordsExtracted: syncProgress?.recordsCommitted,
-      recordsLoaded: syncProgress?.recordsEmitted,
+      recordsExtracted: syncProgress?.recordsEmitted,
+      recordsLoaded: syncProgress?.recordsCommitted,
     };
   }
 
