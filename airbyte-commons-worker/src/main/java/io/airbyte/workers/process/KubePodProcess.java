@@ -49,6 +49,7 @@ import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
 import io.fabric8.kubernetes.client.readiness.Readiness;
+import io.github.pixee.security.SystemCommand;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -347,7 +348,7 @@ public class KubePodProcess implements KubePod {
             podDefinition.getMetadata().getName(), containerPath, INIT_CONTAINER_NAME);
         LOGGER.info(command);
 
-        proc = Runtime.getRuntime().exec(command);
+        proc = SystemCommand.runCommand(Runtime.getRuntime(), command);
         LOGGER.info("Waiting for kubectl cp to complete");
         final int exitCode = proc.waitFor();
 

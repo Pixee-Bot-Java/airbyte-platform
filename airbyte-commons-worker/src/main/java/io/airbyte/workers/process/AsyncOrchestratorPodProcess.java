@@ -37,6 +37,7 @@ import io.fabric8.kubernetes.api.model.VolumeBuilder;
 import io.fabric8.kubernetes.api.model.VolumeMount;
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.github.pixee.security.SystemCommand;
 import io.micronaut.core.util.CollectionUtils;
 import io.micronaut.core.util.StringUtils;
 import java.io.BufferedOutputStream;
@@ -635,7 +636,7 @@ public class AsyncOrchestratorPodProcess implements KubePod {
             podDefinition.getMetadata().getName(), containerPath, KubePodProcess.INIT_CONTAINER_NAME);
         log.info(command);
 
-        proc = Runtime.getRuntime().exec(command);
+        proc = SystemCommand.runCommand(Runtime.getRuntime(), command);
         log.info("Waiting for kubectl cp to complete");
         final int exitCode = proc.waitFor();
 
