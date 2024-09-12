@@ -6,6 +6,7 @@ package io.airbyte.commons.io;
 
 import io.airbyte.commons.concurrency.VoidCallable;
 import io.airbyte.commons.logging.MdcScope;
+import io.github.pixee.security.BoundedLineReader;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -159,12 +160,12 @@ public class LineGobbler implements VoidCallable {
   public void voidCall() {
     MDC.setContextMap(mdc);
     try {
-      String line = is.readLine();
+      String line = BoundedLineReader.readLine(is, 5_000_000);
       while (line != null) {
         try (final var mdcScope = containerLogMdcBuilder.build()) {
           consumer.accept(line);
         }
-        line = is.readLine();
+        line = BoundedLineReader.readLine(is, 5_000_000);
       }
     } catch (final IOException i) {
       LOGGER.warn("{} gobbler IOException: {}. Typically happens when cancelling a job.", caller, i.getMessage());

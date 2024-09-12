@@ -29,6 +29,7 @@ import io.airbyte.protocol.models.AirbyteLogMessage;
 import io.airbyte.protocol.models.AirbyteMessage;
 import io.airbyte.protocol.models.ConfiguredAirbyteCatalog;
 import io.airbyte.workers.helper.GsonPksExtractor;
+import io.github.pixee.security.BoundedLineReader;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -244,7 +245,7 @@ public class VersionedAirbyteStreamFactory<T> implements AirbyteStreamFactory {
       // message to show up early in the stream. Ideally it should be first message however we do not
       // enforce this constraint currently so connectors may send LOG messages before.
       for (int i = 0; i < MESSAGES_LOOK_AHEAD_FOR_DETECTION; ++i) {
-        final String line = bufferedReader.readLine();
+        final String line = BoundedLineReader.readLine(bufferedReader, 5_000_000);
         final Optional<JsonNode> jsonOpt = Jsons.tryDeserialize(line);
         if (jsonOpt.isPresent()) {
           final JsonNode json = jsonOpt.get();

@@ -8,6 +8,7 @@ import com.google.common.annotations.VisibleForTesting;
 import io.airbyte.commons.resources.MoreResources;
 import io.airbyte.commons.version.AirbyteVersion;
 import io.airbyte.db.instance.FlywayDatabaseMigrator;
+import io.github.pixee.security.BoundedLineReader;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -147,12 +148,12 @@ public class MigrationDevHelper {
   @VisibleForTesting
   static AirbyteVersion getCurrentAirbyteVersion() {
     try (final BufferedReader reader = new BufferedReader(new FileReader("../../.env", StandardCharsets.UTF_8))) {
-      String line = reader.readLine();
+      String line = BoundedLineReader.readLine(reader, 5_000_000);
       while (line != null) {
         if (line.startsWith("VERSION")) {
           return new AirbyteVersion(line.split("=")[1]);
         }
-        line = reader.readLine();
+        line = BoundedLineReader.readLine(reader, 5_000_000);
       }
     } catch (final FileNotFoundException e) {
       throw new IllegalStateException("Cannot find the .env file", e);

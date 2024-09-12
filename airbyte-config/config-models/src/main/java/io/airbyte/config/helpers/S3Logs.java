@@ -8,6 +8,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import io.airbyte.commons.string.Strings;
 import io.airbyte.featureflag.FeatureFlagClient;
+import io.github.pixee.security.BoundedLineReader;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -163,10 +164,10 @@ public class S3Logs implements CloudLogs {
     final var is = new ByteArrayInputStream(data);
     final var currentFileLines = new ArrayList<String>();
     try (final var reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-      String temp = reader.readLine();
+      String temp = BoundedLineReader.readLine(reader, 5_000_000);
       while (temp != null) {
         currentFileLines.add(temp);
-        temp = reader.readLine();
+        temp = BoundedLineReader.readLine(reader, 5_000_000);
       }
     }
     return currentFileLines;
