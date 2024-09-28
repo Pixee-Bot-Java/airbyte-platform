@@ -4,6 +4,8 @@
 
 package io.airbyte.config.specs;
 
+import io.github.pixee.security.HostValidator;
+import io.github.pixee.security.Urls;
 import static io.micronaut.http.HttpHeaders.ACCEPT;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -152,7 +154,7 @@ public class RemoteDefinitionsProvider implements DefinitionsProvider {
   @VisibleForTesting
   URL getRegistryUrl() {
     try {
-      return new URL(remoteRegistryBaseUrl + String.format("registries/v0/%s_registry.json", getRegistryName()));
+      return Urls.create(remoteRegistryBaseUrl + String.format("registries/v0/%s_registry.json", getRegistryName()), Urls.HTTP_PROTOCOLS, HostValidator.DENY_COMMON_INFRASTRUCTURE_TARGETS);
     } catch (final MalformedURLException e) {
       throw new RuntimeException("Invalid URL format", e);
     }
