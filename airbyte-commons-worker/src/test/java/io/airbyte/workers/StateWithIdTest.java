@@ -4,6 +4,7 @@
 
 package io.airbyte.workers;
 
+import java.security.SecureRandom;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
@@ -37,7 +38,7 @@ class StateWithIdTest {
         + "23896935,\\\"txId\\\":505,\\\"ts_usec\\\":1677520006097984}\"}"
   })
   void globalStateTest(final String cdcState) {
-    final Random random = new Random();
+    final Random random = new SecureRandom();
     final double recordCount = random.nextDouble();
     final String cursorName = UUID.randomUUID().toString();
 
@@ -64,7 +65,7 @@ class StateWithIdTest {
 
   @Test
   void streamStateTest() {
-    final Random random = new Random();
+    final Random random = new SecureRandom();
     final double recordCount = random.nextDouble();
     final String cursorName = UUID.randomUUID().toString();
 
