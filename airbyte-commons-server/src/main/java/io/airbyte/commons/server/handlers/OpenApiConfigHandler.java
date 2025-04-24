@@ -20,7 +20,7 @@ public class OpenApiConfigHandler {
 
   static {
     try {
-      TMP_FILE = File.createTempFile("airbyte", "openapiconfig");
+      TMP_FILE = Files.createTempFile("airbyte", "openapiconfig").toFile();
       TMP_FILE.deleteOnExit();
       Files.writeString(TMP_FILE.toPath(), MoreResources.readResource("config.yaml"));
     } catch (final IOException e) {

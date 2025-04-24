@@ -4,6 +4,7 @@
 
 package io.airbyte.commons.util;
 
+import java.nio.file.Files;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.airbyte.commons.io.IOs;
@@ -19,7 +20,7 @@ class MorePropertiesTest {
     final String envFileContents = "OPTION1=hello\n"
         + "OPTION2=2\n"
         + "OPTION3=\n";
-    final File envFile = File.createTempFile("properties-test", ".env");
+    final File envFile = Files.createTempFile("properties-test", ".env").toFile();
     IOs.writeFile(envFile.toPath(), envFileContents);
 
     final Properties actual = MoreProperties.envFileToProperties(envFile);

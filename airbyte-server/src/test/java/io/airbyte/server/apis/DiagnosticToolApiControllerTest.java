@@ -12,6 +12,7 @@ import io.micronaut.http.HttpStatus;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -25,7 +26,7 @@ class DiagnosticToolApiControllerTest extends BaseControllerTest {
 
   @Test
   void testGenerateDiagnosticReport() throws IOException {
-    final File result = File.createTempFile("test-diagnostic", "");
+    final File result = Files.createTempFile("test-diagnostic", "").toFile();
     result.deleteOnExit();
     Mockito.when(diagnosticToolHandler.generateDiagnosticReport()).thenReturn(result);
     final String path = "/api/v1/diagnostic_tool/generate_report";
