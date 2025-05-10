@@ -4,6 +4,7 @@
 
 package io.airbyte.commons.server.handlers;
 
+import io.github.pixee.security.ZipSecurity;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -94,7 +95,7 @@ class DiagnosticToolHandlerTest {
     Assertions.assertTrue(zipFile.exists());
     // Check the content of the zip file
     try (FileInputStream fis = new FileInputStream(zipFile);
-        ZipInputStream zis = new ZipInputStream(fis)) {
+        ZipInputStream zis = ZipSecurity.createHardenedInputStream(fis)) {
 
       ZipEntry entry;
       boolean foundApplicationYaml = false;
