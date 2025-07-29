@@ -4,6 +4,7 @@
 
 package io.airbyte.db.instance.configs;
 
+import java.nio.file.Files;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,7 +23,7 @@ class ConfigsDatabaseMigratorTest extends AbstractConfigsDatabaseTest {
 
   @Test
   void dumpSchema() throws IOException {
-    final File schemaDumpFile = File.createTempFile("configs-schema-dump", "txt");
+    final File schemaDumpFile = Files.createTempFile("configs-schema-dump", "txt").toFile();
     schemaDumpFile.deleteOnExit();
     final Flyway flyway = FlywayFactory.create(getDataSource(), getClass().getSimpleName(), ConfigsDatabaseMigrator.DB_IDENTIFIER,
         ConfigsDatabaseMigrator.MIGRATION_FILE_LOCATION);

@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -76,7 +77,7 @@ public class DiagnosticToolHandler {
       byte[] zipFileContent = generateZipInMemory();
 
       // Write the byte[] to a temporary file
-      File tempFile = File.createTempFile(DIAGNOSTIC_REPORT_FILE_NAME, DIAGNOSTIC_REPORT_FILE_FORMAT);
+      File tempFile = Files.createTempFile(DIAGNOSTIC_REPORT_FILE_NAME, DIAGNOSTIC_REPORT_FILE_FORMAT).toFile();
       try (FileOutputStream fos = new FileOutputStream(tempFile)) {
         fos.write(zipFileContent);
       }
